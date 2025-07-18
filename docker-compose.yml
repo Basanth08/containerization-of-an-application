@@ -1,0 +1,110 @@
+version: '3.8'
+
+services:
+  # MySQL Database Service
+  vprodb:
+    build: ./Docker-files/db
+    container_name: vprodb
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: vprodbpass
+      MYSQL_DATABASE: accounts
+      MYSQL_USER: admin
+      MYSQL_PASSWORD: admin123
+    ports:
+      - "3306:3306"
+    volumes:
+      - db_data:/var/lib/mysql
+    networks:
+      - vprofile-network
+
+  # Memcache Service (Active)
+  vprocache01:
+    image: memcached:alpine
+    container_name: vprocache01
+    restart: unless-stopped
+    ports:
+      - "11211:11211"
+    networks:
+      - vprofile-network
+
+  # Memcache Service (Standby)
+  vprocache02:
+    image: memcached:alpine
+    container_name: vprocache02
+    restart: unless-stopped
+    ports:
+      - "11212:11211"
+    networks:
+      - vprofile-network
+
+  # RabbitMQ Service
+  vpromq01:
+    image: rabbitmq:3-management
+    container_name: vpromq01
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    networks:
+      - vprofile-network
+
+  # Elasticsearch Service
+  vprosearch01:
+    image: elasticsearch:5.6.4
+    container_name: vprosearch01
+    restart: unless-stopped
+    environment:
+      - cluster.name=vprofile
+      - node.name=vprofilenode
+      - bootstrap.memory_lock=true
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    ports:
+      - "9200:9200"
+      - "9300:9300"
+    networks:
+      - vprofile-network
+
+  # Java Application Service
+  vproapp:
+    build: ./Docker-files/app
+    container_name: vproapp
+    restart: unless-stopped
+    depends_on:
+      - vprodb
+      - vprocache01
+      - vprocache02
+      - vpromq01
+      - vprosearch01
+    ports:
+      - "8080:8080"
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+    networks:
+      - vprofile-network
+
+  # Nginx Web Service
+  vproweb:
+    build: ./Docker-files/web
+    container_name: vproweb
+    restart: unless-stopped
+    depends_on:
+      - vproapp
+    ports:
+      - "80:80"
+    networks:
+      - vprofile-network
+
+volumes:
+  db_data:
+
+networks:
+  vprofile-network:
+    driver: bridge
